@@ -1,132 +1,106 @@
-import { getDataFromApi, addTaskToApi } from './data';
-import { POMODORO_BREAK, POMODORO_WORK } from './constans';
-import { getNow, addMinutes, getTimeRemaining } from './helpers/date';
+import { addTaskToApi } from './data';
+import TimeLogic from './logic/TimeLogic';
+import ElementProcess from './logic/ElementProcess';
+import ListenerHandler from './logic/ListenerHandler';
+import { endMessage } from './helpers/elementprocess';
 
-class PomodoroApp {
+class PomodoroApp extends ElementProcess {
   constructor(options) {
-    let {
-      tableTbodySelector,
-      taskFormSelector,
-      startButtonSelector,
-      timerSelector,
-      pauseButtonSelector,
-    } = options;
-    this.data = [];
-    this.$tableTbody = document.querySelector(tableTbodySelector);
-    this.$taskForm = document.querySelector(taskFormSelector);
-    this.$taskFormInput = this.$taskForm.querySelector('input');
-    this.$startButton = document.querySelector(startButtonSelector);
-    this.$pauseButton = document.querySelector(pauseButtonSelector);
-    this.$timerEl = document.querySelector(timerSelector);
-    this.currentInterval = null;
-    this.currentRemaining = null;
-    this.currentTask = null;
-    this.breakInterval = null;
+    super(options);
+    this.TimeLogic = new TimeLogic(this);
+    // All listeners here
+    this.ListenerHandler = new ListenerHandler(this);
+  }
+
+  addTaskToTable(task) {
+    this.currentPomodoroTimes = task;
+    // extended from ElementProcess
+    this.TaskTable.addTask(task);
+    this.data.push(task);
   }
 
   addTask(task) {
     addTaskToApi(task)
-      .then((data) => data.json())
+      // line turn on while remote work
+      // .then((data) => data.json())
       .then((newTask) => {
-        this.data = [...this.data, newTask];
         this.addTaskToTable(newTask);
       });
   }
 
-  addTaskToTable(task, index) {
-    const $newTaskEl = document.createElement('tr');
-    $newTaskEl.setAttribute('data-taskId', `task${task.id}`);
-    $newTaskEl.classList.add('task');
-    $newTaskEl.innerHTML = `<th scope="row">${task.id}</th><td>${task.title}</td>`;
-    this.$tableTbody.appendChild($newTaskEl);
-    this.$taskFormInput.value = '';
+  startTask() {
+    this.TimeLogic.initializeTimer();
   }
 
-  handleAddTask() {
-    this.$taskForm.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const task = { title: this.$taskFormInput.value };
-      this.addTask(task);
-    });
+  handleEnd() {
+    clearInterval(this.TimeLogic.currentInterval);
+    this.renderTimeInfo('All tasks are done');
+    this.end();
   }
 
-  fillTasksTable() {
-    getDataFromApi().then((currentTasks) => {
-      this.data = currentTasks;
-      currentTasks.forEach((task, index) => {
-        this.addTaskToTable(task, index + 1);
-      });
-    });
+  setTask() {
+    if (this.currentPomodoroTimes) {
+      this.startTask();
+    } else {
+      this.handleEnd();
+    }
   }
 
-  initializeTimer(endTime) {
-    this.currentInterval = setInterval(() => {
-      const remainingTime = getTimeRemaining(endTime);
-      const { total, minutes, seconds } = remainingTime;
-      this.currentRemaining = total;
-      this.$timerEl.innerHTML = minutes + ':' + seconds;
-      if (total <= 0) {
-        clearInterval(this.currentInterval);
-        this.currentTask.completed = true;
-        const now = getNow();
-        const breakEndDate = addMinutes(now, POMODORO_BREAK);
-        this.breakInterval = setInterval(() => {
-          const remainingBreakTime = getTimeRemaining(breakEndDate);
-          const { total, minutes, seconds } = remainingBreakTime;
-          this.$timerEl.innerHTML =
-            'Chill: ' +
-            remainingBreakTime.minutes +
-            ':' +
-            remainingBreakTime.seconds;
-          if (remainingBreakTime.total <= 0) {
-            clearInterval(this.breakInterval);
-            this.createNewTimer();
-          }
-        }, 1000);
-      }
-    }, 1000);
+  continueTask() {
+    const remainingDeadline = this.TimeLogic.getRemaining();
+    this.TimeLogic[this.TimeLogic.lastTimer](remainingDeadline);
   }
 
-  setActiveTask() {
-    const allTasks = document.querySelectorAll('.task');
-    allTasks.forEach(($taskItem) => ($taskItem.style.background = '#fff'));
-    this.currentTask = this.data.find((task) => !task.completed);
-    const targetEl = document.querySelector(
-      `tr[data-taskId = 'task${this.currentTask.id}']`
+  start() {
+    // check if continues to current task or start a new task.
+    if (this.TimeLogic.currentRemaining) {
+      this.continueTask();
+    } else {
+      this.setTask();
+    }
+  }
+
+  pause() {
+    clearInterval(this.TimeLogic.currentInterval);
+  }
+
+  end(message = '') {
+    const tasktTitle = this.currentPomodoroTimes.title;
+    clearInterval(this.TimeLogic.currentInterval);
+    this.TimeLogic.currentRemaining = null;
+    this.TimeLogic.lastTimer = null;
+    this.TimeLogic.repeatedCycle = 1;
+    this.$taskFormAddButton.disabled = false;
+    this.$taskFormInput.disabled = false;
+    const modalFullScreenTrigger = document.getElementById(
+      'modalFullScreenTrigger'
     );
-    targetEl.style.background = 'red';
-  }
-
-  createNewTimer() {
-    const now = getNow();
-    const endDate = addMinutes(now, POMODORO_WORK);
-    this.initializeTimer(endDate);
-    this.setActiveTask();
-  }
-
-  handleStart() {
-    this.$startButton.addEventListener('click', () => {
-      const now = getNow();
-      if (this.currentRemaining) {
-        const remaining = new Date(now.getTime() + this.currentRemaining);
-        this.initializeTimer(remaining);
-      } else {
-        this.createNewTimer();
-      }
-    });
-  }
-
-  handlePause() {
-    this.$pauseButton.addEventListener('click', () => {
-      clearInterval(this.currentInterval);
-    });
+    this.$periodNamesElement = null;
+    modalFullScreenTrigger.disabled = false;
+    this.$taskController.style.display = 'none';
+    this.$taskFormAddButton.disabled = true;
+    this.elementSwitcherForCurrentInfo(this.$pomodoroTimes);
+    this.currentPomodoroTimes = {};
+    this.currentPomodoroTimes = {};
+    endMessage(
+      `${
+        message === ''
+          ? tasktTitle + ' has been ended'
+          : tasktTitle + ' ' + message
+      }`
+    );
+    // Reinitialization
+    this.ListenerHandler.handleAddTaskForm();
+    this.ListenerHandler.handlePomodoroTimes();
+    this.ListenerHandler.tableListenerForAction();
   }
 
   init() {
-    this.fillTasksTable();
-    this.handleAddTask();
-    this.handleStart();
-    this.handlePause();
+    this.ListenerHandler.handleAddTaskForm();
+    this.ListenerHandler.handlePomodoroTimes();
+    this.ListenerHandler.handleCreateButton();
+    this.ListenerHandler.handleTaskController();
+    this.ListenerHandler.tableListenerForAction();
   }
 }
 

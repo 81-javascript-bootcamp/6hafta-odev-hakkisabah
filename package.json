@@ -9,7 +9,7 @@
     "lint": "eslint src --ext .js",
     "lint-fix": "eslint src --fix --ext .js",
     "format": "prettier src --write",
-    "test": "jest",
+    "test": "jest --watchAll",
     "test-coverage": "jest --coverage"
   },
   "keywords": [
@@ -37,6 +37,8 @@
     "webpack-dev-server": "^3.11.2"
   },
   "dependencies": {
-    "bootstrap": "^4.6.0"
+    "bootstrap": "^4.6.0",
+    "datatables.net": "^1.10.23",
+    "jquery": "^3.6.0"
   }
 }
